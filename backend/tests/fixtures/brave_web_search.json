@@ -1,0 +1,12 @@
+{
+  "web": {
+    "results": [
+      {
+        "title": "青岛市博物馆",
+        "url": "https://example.org/museum",
+        "description": "<b>周二至周日 9:00-17:00</b>"
+      },
+      {"title": "没有链接", "description": "丢弃"}
+    ]
+  }
+}

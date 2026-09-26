@@ -1,0 +1,9 @@
+{
+  "daily": {
+    "time": ["2026-09-26"],
+    "weather_code": [0],
+    "temperature_2m_max": [22.4],
+    "temperature_2m_min": [15.2],
+    "precipitation_sum": [0.0]
+  }
+}

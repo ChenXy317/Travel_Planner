@@ -1,0 +1,16 @@
+{
+  "elements": [
+    {
+      "type": "node",
+      "lat": 36.07,
+      "lon": 120.39,
+      "tags": {"name": "青岛市博物馆", "tourism": "museum"}
+    },
+    {
+      "type": "node",
+      "lat": 36.08,
+      "lon": 120.4,
+      "tags": {"tourism": "museum"}
+    }
+  ]
+}
