@@ -9,10 +9,11 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphRecursionError
+from openai import DefaultAsyncHttpxClient, DefaultHttpxClient
 
 from app.chat import append_message, load_model_messages
 from app.checks import shanghai_today
-from app.llm_runtime import effective_api_key, get_llm_config
+from app.llm_runtime import ModelConfigError, effective_api_key, ensure_chat_config, get_llm_config
 from app.session import AgentContext, begin_request, end_request
 from app.tools import TOOLS
 
@@ -38,16 +39,32 @@ _TOOL_NAMES = {
 }
 
 
+_llm_http: DefaultHttpxClient | None = None
+_llm_http_async: DefaultAsyncHttpxClient | None = None
+
+
+def _llm_clients() -> tuple[DefaultHttpxClient, DefaultAsyncHttpxClient]:
+    """对话客户端不跟随跳转，密钥只发给配置里的那台主机。"""
+    global _llm_http, _llm_http_async
+    if _llm_http is None or _llm_http.is_closed:
+        _llm_http = DefaultHttpxClient(follow_redirects=False)
+    if _llm_http_async is None or _llm_http_async.is_closed:
+        _llm_http_async = DefaultAsyncHttpxClient(follow_redirects=False)
+    return _llm_http, _llm_http_async
+
+
 def build_chat_model() -> ChatOpenAI:
     """OpenAI 兼容对话模型。页面配置优先于环境变量，温度与计划一致。"""
     cfg = get_llm_config()
-    if not cfg.model:
-        raise ValueError("需要填写模型名")
+    ensure_chat_config(cfg)
+    sync_client, async_client = _llm_clients()
     return ChatOpenAI(
         model=cfg.model,
         api_key=effective_api_key(cfg),
         base_url=cfg.base_url,
         temperature=0.2,
+        http_client=sync_client,
+        http_async_client=async_client,
     )
 
 
@@ -192,12 +209,19 @@ async def stream_chat(message: str):
     done: set[str] = set()
     pending: _Round | None = None
     try:
+        try:
+            model = build_chat_model()
+        except ModelConfigError as exc:
+            log.error("对话模型配置无效")
+            yield sse("error", {"message": str(exc)})
+            yield sse("done", {})
+            return
         append_message("user", message)
         history = load_model_messages(24)
         # 当前 LangGraph 序列化 dataclass 上下文时会对照 None 默认值报警，结果不受影响。
         warnings.filterwarnings("ignore", message=r"Pydantic serializer warnings", category=UserWarning)
         agent = create_agent(
-            model=build_chat_model(),
+            model=model,
             tools=TOOLS,
             system_prompt=system_prompt(shanghai_today()),
             context_schema=AgentContext,

@@ -34,4 +34,4 @@ if [[ "$ready" -ne 1 ]]; then
   exit 1
 fi
 
-exec npm run dev --prefix frontend
+npm run dev --prefix frontend

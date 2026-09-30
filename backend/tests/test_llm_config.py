@@ -1,8 +1,9 @@
 import httpx
+import pytest
 
 from app.agent import build_chat_model
 from app.llm_config import list_models
-from app.llm_runtime import clear_llm_overrides, validate_llm_base_url
+from app.llm_runtime import LLMRuntimeConfig, clear_llm_overrides, validate_llm_base_url
 
 
 def _env(monkeypatch):
@@ -79,6 +80,27 @@ def test_private_and_metadata_hosts_are_rejected(client):
     assert validate_llm_base_url("http://127.0.0.1:11434/v1") == "http://127.0.0.1:11434/v1"
 
 
+def test_obfuscated_private_hosts_are_rejected():
+    blocked = [
+        "http://10.0.0.01/v1",
+        "http://0x0a.0.0.1/v1",
+        "http://192.168.001.010/v1",
+        "http://0251.0376.0251.0376/",
+        "http://169.254.169.0376/",
+        "http://10.1/v1",
+        "http://2852039166/",
+        "http://[::ffff:169.254.169.254]/",
+        "http://[fd00::1]/v1",
+    ]
+    for base_url in blocked:
+        with pytest.raises(ValueError, match="主机不允许"):
+            validate_llm_base_url(base_url)
+    assert validate_llm_base_url("http://127.1:11434/v1") == "http://127.1:11434/v1"
+    assert validate_llm_base_url("http://0x7f.0.0.1:11434/v1") == "http://0x7f.0.0.1:11434/v1"
+    assert validate_llm_base_url("http://[::1]:11434/v1") == "http://[::1]:11434/v1"
+    assert validate_llm_base_url("https://api.example.com/v1") == "https://api.example.com/v1"
+
+
 def test_list_models_reads_openai_ids(monkeypatch):
     class FakeResponse:
         def raise_for_status(self):
@@ -88,8 +110,9 @@ def test_list_models_reads_openai_ids(monkeypatch):
             return {"data": [{"id": "qwen2.5:1.5b"}, {"id": ""}, "skip"]}
 
     class FakeClient:
-        def __init__(self, timeout):
+        def __init__(self, timeout, follow_redirects=True):
             assert timeout == 3
+            assert follow_redirects is False
 
         def __enter__(self):
             return self
@@ -115,3 +138,29 @@ def test_build_chat_model_uses_page_config(monkeypatch):
     assert model.model_name == "demo"
     assert model.temperature == 0.2
     assert str(model.openai_api_base).rstrip("/") == "https://api.example.com/v1"
+    assert model.http_client.follow_redirects is False
+    assert model.http_async_client.follow_redirects is False
+
+
+def test_missing_model_is_a_config_error(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.agent.get_llm_config",
+        lambda: LLMRuntimeConfig(base_url="http://127.0.0.1:11434/v1", api_key=None, model=""),
+    )
+    response = client.post("/api/v1/chat", json={"message": "你好"})
+    assert response.status_code == 200
+    assert "需要填写模型名" in response.text
+    assert "模型请求失败" not in response.text
+    assert client.get("/api/v1/messages").json()["messages"] == []
+
+
+def test_bad_base_url_is_a_config_error(client, monkeypatch):
+    monkeypatch.setattr(
+        "app.agent.get_llm_config",
+        lambda: LLMRuntimeConfig(base_url="not-a-url", api_key=None, model="demo"),
+    )
+    response = client.post("/api/v1/chat", json={"message": "你好"})
+    assert response.status_code == 200
+    assert "base_url 必须是带主机名的 http(s) 地址" in response.text
+    assert "模型请求失败" not in response.text
+    assert client.get("/api/v1/messages").json()["messages"] == []

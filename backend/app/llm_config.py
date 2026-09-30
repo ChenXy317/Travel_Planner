@@ -27,7 +27,8 @@ def list_models(base_url: str, api_key: str | None) -> list[str]:
     if api_key and api_key.strip():
         headers["Authorization"] = f"Bearer {api_key.strip()}"
     try:
-        with httpx.Client(timeout=3) as client:
+        # 不跟随跳转，避免带密钥的请求被转到另一台主机。
+        with httpx.Client(timeout=3, follow_redirects=False) as client:
             response = client.get(url, headers=headers)
             response.raise_for_status()
             payload = response.json()

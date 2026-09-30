@@ -1,6 +1,7 @@
 """对话模型覆盖。只活在进程内存里，重启后回到环境变量。"""
 
 import ipaddress
+import socket
 from dataclasses import dataclass
 from threading import Lock
 from urllib.parse import urlparse
@@ -40,16 +41,25 @@ def env_chat_config() -> LLMRuntimeConfig:
     )
 
 
-def _host_blocked(host: str) -> bool:
-    host = host.strip().lower().rstrip(".")
-    if host in _ALLOWED_LLM_HOSTS:
-        return False
-    if host in _BLOCKED_LLM_HOSTS:
-        return True
+class ModelConfigError(ValueError):
+    """对话模型的名字或地址还不能用。"""
+
+
+def _literal_address(host: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
     try:
-        addr = ipaddress.ip_address(host)
+        addr: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(host)
     except ValueError:
-        return "." not in host
+        try:
+            # ipaddress 不认八进制、十六进制和省略写法，本机解析会连到那个地址。
+            addr = ipaddress.IPv4Address(socket.inet_aton(host))
+        except OSError:
+            return None
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return addr.ipv4_mapped
+    return addr
+
+
+def _address_blocked(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if addr.is_loopback:
         return False
     return bool(
@@ -59,6 +69,26 @@ def _host_blocked(host: str) -> bool:
         or addr.is_multicast
         or addr.is_unspecified
     )
+
+
+def _host_blocked(host: str) -> bool:
+    host = host.strip().lower().rstrip(".")
+    if host in _ALLOWED_LLM_HOSTS:
+        return False
+    if host in _BLOCKED_LLM_HOSTS:
+        return True
+    addr = _literal_address(host)
+    if addr is not None:
+        return _address_blocked(addr)
+    return "." not in host
+
+
+def ensure_chat_config(cfg: LLMRuntimeConfig) -> None:
+    if not cfg.model.strip():
+        raise ModelConfigError("需要填写模型名")
+    parsed = urlparse(cfg.base_url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ModelConfigError("base_url 必须是带主机名的 http(s) 地址")
 
 
 def validate_llm_base_url(url: str) -> str:

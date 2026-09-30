@@ -1,0 +1,36 @@
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #12262c;
+  color: #12262c;
+  font-family: "Noto Sans CJK SC", "Noto Sans CJK JP", "PingFang SC", sans-serif;
+}
+
+#app {
+  min-height: 100%;
+}
+
+.trip-modal .ant-modal-content {
+  background: #fbf8f3;
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(18, 38, 44, 0.28);
+}
+
+.trip-modal .ant-modal-header {
+  background: transparent;
+}
+
+.trip-modal .ant-modal-title {
+  font-family: "Noto Serif CJK SC", "Noto Serif CJK JP", serif;
+  font-size: 22px;
+  color: #12262c;
+}
+
+.trip-modal .ant-modal-close {
+  color: #6e655b;
+}
